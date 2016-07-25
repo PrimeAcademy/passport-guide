@@ -307,6 +307,8 @@ router.get('/', function(req, res, next) {
 ```
 
 
-That’s it! You have users authenticating and you’re storing unencrypted passwords. Nice job! Remember that this is **not** secure and you should never deploy an application like this. We will discuss how to encrypt passwords later.[Bill Murray says, "Good job".](bill.jpg)
+That’s it! You have users authenticating and you’re storing unencrypted passwords. Nice job! Remember that this is **not** secure and you should never deploy an application like this. We will discuss how to encrypt passwords later.
+
+![Bill Murray says, "Good job".](bill.jpg)
 
 <b id="f1">1</b> Somewhat helpful description of the flow: http://stackoverflow.com/questions/27637609/understanding-passport-serialize-deserialize [↩](#a1)
