@@ -1,4 +1,6 @@
-﻿Passport is authentication middleware for Node.js.
+*Note: this guide assumes you already have a basic express web server with body-parser set up*
+
+Passport is authentication middleware for Node.js.
 
 It’s extremely flexible and modular and can be dropped in to any Express-based web application, and can authenticate users via many different authentication mechanisms called “strategies”.
 
@@ -11,7 +13,7 @@ Let’s add Passport to our application.
 npm install passport --save
 ```
 
-To use it, we need to require it in app.js (our main application file).
+To use it, we need to require it in server.js (our main application file).
 
 ```
 var passport = require('passport');
@@ -26,7 +28,7 @@ We have to install and use express-session:
 npm install express-session --save
 ```
 
-Make sure these lines go before you use your routes in app.js.
+Make sure these lines go before you use your routes in server.js.
 
 ```
 var session = require('express-session');
@@ -49,7 +51,7 @@ Let’s add Passport-Local to our application:
 npm install passport-local --save
 ```
 
-To use it, we need to require it in app.js, and get a reference to the module’s strategy object. Make sure theses lines go after those you just typed, but before you use your routes!
+To use it, we need to require it in server.js, and get a reference to the module’s strategy object. Make sure theses lines go after those you just typed, but before you use your routes!
 
 ```
 var localStrategy = require('passport-local').Strategy;
@@ -62,12 +64,15 @@ app.use(passport.initialize());
 app.use(passport.session());
 ```
 
-Now, we have to tell passport which strategy to use inside our app.js file.
+Now, we have to tell passport which strategy to use inside our server.js file.
 
 ```
 passport.use('local', new localStrategy({ passReqToCallback : true, usernameField: 'username' },
-   function(req, username, password, done) {
-   }
+  function(req, username, password, done) {
+
+    // our implementation will go here
+
+  }
 ));
 ```
 
@@ -79,7 +84,7 @@ So, we need to create a user model in Mongo. Make sure you have Mongoose install
 npm install mongoose --save
 ```
 
-Require mongoose and add a mongo connection to our app.js file (give it a unique document store name). Make sure these lines go before you use your models in app.js.
+Require mongoose and add a mongo connection to our server.js file (give it a unique document store name). Make sure these lines go before you use your models in server.js.
 
 ```
 var mongoose = require('mongoose');
@@ -101,9 +106,9 @@ Next, we’re going to add a user.js file to the models folder.
 
 ```
 var mongoose = require('mongoose'),
-   Schema = mongoose.Schema,
-   bcrypt = require('bcrypt'),
-   SALT_WORK_FACTOR = 10;
+    Schema = mongoose.Schema,
+    bcrypt = require('bcrypt'),
+    SALT_WORK_FACTOR = 10;
 
 var UserSchema = new Schema({
    username: { type: String, required: true, index: { unique: true } },
@@ -127,28 +132,30 @@ Inside the same user.js file, we hash passwords before user documents are saved 
 
 ```
 UserSchema.pre('save', function(next) {
-   var user = this;
+  var user = this;
 
+  // only hash the password if it has been modified (or is new)
+  if (!user.isModified('password')) {
+    return next();
+  }
 
-   // only hash the password if it has been modified (or is new)
-   if (!user.isModified('password')) return next();
+  // generate a salt
+  bcrypt.genSalt(SALT_WORK_FACTOR, function(err, salt) {
+    if (err) {
+      return next(err);
+    }
 
+    // hash the password along with our new salt
+    bcrypt.hash(user.password, salt, function(err, hash) {
+      if (err) {
+        return next(err);
+      }
 
-   // generate a salt
-   bcrypt.genSalt(SALT_WORK_FACTOR, function(err, salt) {
-       if (err) return next(err);
-
-
-       // hash the password along with our new salt
-       bcrypt.hash(user.password, salt, function(err, hash) {
-           if (err) return next(err);
-
-
-           // override the cleartext password with the hashed one
-           user.password = hash;
-           next();
-       });
-   });
+      // override the cleartext password with the hashed one
+      user.password = hash;
+      next();
+    });
+  });
 });
 ```
 
@@ -156,17 +163,19 @@ Also create a convenience method for comparing passwords later on.
 
 ```
 UserSchema.methods.comparePassword = function(candidatePassword, cb) {
-   bcrypt.compare(candidatePassword, this.password, function(err, isMatch) {
-       if (err) return cb(err);
-       cb(null, isMatch);
-   });
+  bcrypt.compare(candidatePassword, this.password, function(err, isMatch) {
+    if (err) {
+      return cb(err);
+    }
+    cb(null, isMatch);
+  });
 };
 ```
 
 The user’s password plus some extra random “salt” is sent through a one-way function to compute a hash. This way each user’s password is uniquely encrypted.
 
 
-Back in app.js we can add the rest of our authentication strategy.  Require our newly created user in app.js
+Back in server.js we can add the rest of our authentication strategy.  Require our newly created user in server.js
 
 ```
 var User = require('./models/user');
@@ -180,10 +189,12 @@ passport.serializeUser(function(user, done) {
 });
 
 passport.deserializeUser(function(id, done) {
-   User.findById(id, function(err,user){
-       if(err) done(err);
-       done(null,user);
-   });
+  User.findById(id, function(err,user){
+    if(err) {
+      return done(err);
+    }
+    done(null,user);
+  });
 });
 ```
 
@@ -191,32 +202,40 @@ NOTE: You need to replace the other passport.use('local'... with this completed 
 
 ```
 passport.use('local', new localStrategy({
-       passReqToCallback : true,
-       usernameField: 'username'
-   },
-function(req, username, password, done){
-   User.findOne({ username: username }, function(err, user) {
-       if (err) throw err;
-       if (!user)
-           return done(null, false, {message: 'Incorrect username and password.'});
+      passReqToCallback : true,
+      usernameField: 'username'
+  },
+  function(req, username, password, done){
+    User.findOne({ username: username }, function(err, user) {
+      if (err) {
+         throw err
+      };
 
+      if (!user) {
+        return done(null, false, {message: 'Incorrect username and password.'});
+      }
 
-       // test a matching password
-       user.comparePassword(password, function(err, isMatch) {
-           if (err) throw err;
-           if(isMatch)
-               return done(null, user);
-           else
-               done(null, false, { message: 'Incorrect username and password.' });
-       });
-   });
-}));
+      // test a matching password
+      user.comparePassword(password, function(err, isMatch) {
+        if (err) {
+          throw err;
+        }
+
+        if (isMatch) {
+          return done(null, user);
+        } else {
+          done(null, false, { message: 'Incorrect username and password.' });
+        }
+      });
+    });
+  })
+);
 ```
 
-Next create an index.html page and add a login form.
+Next create an login.html page and add a login form.
 
 ```
-<form action="/" method="post">
+<form action="/login" method="post">
    <div>
        <label for="username">Username:</label>
        <input type="text" name="username" id="username"/>
@@ -232,7 +251,7 @@ Next create an index.html page and add a login form.
 </form>
 ```
 
-Create a route for the new index file. Passport.authenticate is specifying our ‘local’ strategy that we created, and specifies a failure and success redirect.
+Create a route to handle logging in. Passport.authenticate is specifying our ‘local’ strategy that we created, and specifies a failure and success redirect.
 
 **NOTE: If you have not put BOTH body parser functions (json and urlencoded) do so now!**
 
@@ -244,15 +263,15 @@ var path = require('path');
 
 
 router.get("/", function(req,res,next){
-   res.sendFile(path.resolve(__dirname, '../views/index.html'));
+  res.sendFile(path.resolve(__dirname, '../views/login.html'));
 });
 
 
 router.post('/',
-   passport.authenticate('local', {
-       successRedirect: '/users',
-       failureRedirect: '/'
-   })
+  passport.authenticate('local', {
+    successRedirect: '/views/success.html',
+    failureRedirect: '/views/failure.html'
+  })
 );
 
 
@@ -287,36 +306,50 @@ var path = require('path');
 var Users = require('../models/user');
 
 router.get('/', function(req, res, next){
-   res.sendFile(path.resolve(__dirname, '../views/register.html'));
+   res.sendFile(path.resolve(__dirname, '../public/views/register.html'));
 });
 
 router.post('/', function(req,res,next) {
-   Users.create(req.body, function (err, post) {
-       if (err)
-           next(err);
-       else
-           res.redirect('/users');
-   })
+  Users.create(req.body, function (err, post) {
+    if (err) {
+      next(err);
+    } else {
+      // we registered the user, but they haven't logged in yet.
+      // redirect them to the login page
+      res.redirect('/');
+    }
+  })
 });
 
 module.exports = router;
 ```
 
-Add a register route to app.js:
+Add the login and register routes to server.js:
 
 ```
 var register = require('./routes/register');
+var login = require('./routes/login');
 
 ...
 
 app.use('/register', register);
+app.use('/login', login);
+
 ```
 
-Finally, let’s test user.isAuthenticated() in the users.js route
+Make sure we also have a route to serve the login page at the root URL.
+
+```
+app.get("/", function(req,res,next){
+  res.sendFile(path.resolve(__dirname, 'public/views/login.html'));
+});
+```
+
+Finally, let’s test user.isAuthenticated() in the login.js route
 
 ```
 router.get('/', function(req, res, next) {
- res.json(req.isAuthenticated());
+  res.json(req.isAuthenticated());
 });
 ```
 
@@ -335,4 +368,4 @@ $2a$10$vI8aWBnW3fID.ZQ4/zo1G.q1lRps.9cGLcZEiGDMVr5yUP1KUOYTa
 That’s it! You have users authenticating and you’re storing encrypted passwords! Nice job.
 ![Bill Murray says, "Good job".](bill.jpg)
 
-<b id="f1">1</b> Somewhat helpful description of the flow: http://stackoverflow.com/questions/27637609/understanding-passport-serialize-deserialize [↩](#a1) 
+<b id="f1">1</b> Somewhat helpful description of the flow: http://stackoverflow.com/questions/27637609/understanding-passport-serialize-deserialize [↩](#a1)
