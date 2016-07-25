@@ -106,9 +106,7 @@ Next, we’re going to add a user.js file to the models folder.
 
 ```
 var mongoose = require('mongoose'),
-    Schema = mongoose.Schema,
-    bcrypt = require('bcrypt'),
-    SALT_WORK_FACTOR = 10;
+    Schema = mongoose.Schema;
 
 var UserSchema = new Schema({
    username: { type: String, required: true, index: { unique: true } },
@@ -118,56 +116,11 @@ var UserSchema = new Schema({
 module.exports = mongoose.model('User', UserSchema);
 ```
 
-Notice the bcrypt and SALT_WORK_FACTOR references. The purpose of the salt is to defeat rainbow table attacks and to resist brute-force attacks in the event that someone has gained access to your database. I suggest you look up rainbow table attacks and brute-force attacks in regards to hashing.
-
-To avoid these attacks we’ll use a module called bcrypt. bcrypt uses a “key setup phase” that makes computing passwords computationally expensive. Computing one with known salts is easy, but computing many is hard, which is actually a good thing when trying to thwart brute-force attacks. The number of phases is set by the work factor. More on that at the end.
-
-For now, install bcrypt.
-
-```
-npm install bcrypt --save
-```
-
-Inside the same user.js file, we hash passwords before user documents are saved to MongoDB.
-
-```
-UserSchema.pre('save', function(next) {
-  var user = this;
-
-  // only hash the password if it has been modified (or is new)
-  if (!user.isModified('password')) {
-    return next();
-  }
-
-  // generate a salt
-  bcrypt.genSalt(SALT_WORK_FACTOR, function(err, salt) {
-    if (err) {
-      return next(err);
-    }
-
-    // hash the password along with our new salt
-    bcrypt.hash(user.password, salt, function(err, hash) {
-      if (err) {
-        return next(err);
-      }
-
-      // override the cleartext password with the hashed one
-      user.password = hash;
-      next();
-    });
-  });
-});
-```
-
 Also create a convenience method for comparing passwords later on.
 
 ```
 UserSchema.methods.comparePassword = function(candidatePassword, cb) {
-  bcrypt.compare(candidatePassword, this.password, function(err, isMatch) {
-    if (err) {
-      return cb(err);
-    }
-    cb(null, isMatch);
+    cb(null, this.password == candidatePassword);
   });
 };
 ```
@@ -353,19 +306,7 @@ router.get('/', function(req, res, next) {
 });
 ```
 
-Once you’ve got users saving to the database, go look at their “password” field with Robomongo. When stored in the database, a bcrypt "hash" might look something like this:
 
-```
-$2a$10$vI8aWBnW3fID.ZQ4/zo1G.q1lRps.9cGLcZEiGDMVr5yUP1KUOYTa
-```
-
-* 2a identifies the bcrypt algorithm version that was used.
-* 10 is the cost factor; 210 iterations of the key derivation function are used (which is not enough, by the way. I'd recommend a cost of 12 or more.)
-* vI8aWBnW3fID.ZQ4/zo1G.q1lRps.9cGLcZEiGDMVr5yUP1KUOYTa is the salt and the cipher text, concatenated and encoded in a modified Base-64. The first 22 characters decode to a 16-byte value for the salt. The remaining characters are cipher-text to be compared for authentication.
-* ‘$’ are used as delimiters for the header section of the hash.
-
-
-That’s it! You have users authenticating and you’re storing encrypted passwords! Nice job.
-![Bill Murray says, "Good job".](bill.jpg)
+That’s it! You have users authenticating and you’re storing unencrypted passwords. Nice job! Remember that this is **not** secure and you should never deploy an application like this. We will discuss how to encrypt passwords later.[Bill Murray says, "Good job".](bill.jpg)
 
 <b id="f1">1</b> Somewhat helpful description of the flow: http://stackoverflow.com/questions/27637609/understanding-passport-serialize-deserialize [↩](#a1)
